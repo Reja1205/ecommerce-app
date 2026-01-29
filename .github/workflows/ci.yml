@@ -9,9 +9,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ------------------------
+      # Checkout code
+      # ------------------------
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ------------------------
+      # Setup Node
+      # ------------------------
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -33,14 +39,21 @@ jobs:
             sleep 1
           done
           docker exec mongo mongosh --eval "rs.initiate({_id:'rs0',members:[{_id:0,host:'127.0.0.1:27017'}]})" || true
+          for i in {1..30}; do
+            docker exec mongo mongosh --quiet --eval "rs.isMaster().ismaster" | grep true && break
+            sleep 1
+          done
 
       # ------------------------
-      # Backend: install + tests
+      # Backend install
       # ------------------------
       - name: Install backend deps
         working-directory: backend
         run: npm install
 
+      # ------------------------
+      # Backend test env
+      # ------------------------
       - name: Create backend test env file
         working-directory: backend
         run: |
@@ -52,17 +65,23 @@ jobs:
           FRONTEND_ORIGIN=http://localhost:3000
           EOF
 
-      - name: Run backend tests (Jest + Supertest)
+      # ------------------------
+      # Backend tests
+      # ------------------------
+      - name: Run backend tests (Jest)
         working-directory: backend
         run: npm test
 
       # ------------------------
-      # Frontend: install
+      # Frontend install
       # ------------------------
       - name: Install frontend deps
         working-directory: frontend
         run: npm install
 
+      # ------------------------
+      # Frontend env
+      # ------------------------
       - name: Create frontend env file
         working-directory: frontend
         run: |
@@ -71,58 +90,51 @@ jobs:
           EOF
 
       # ------------------------
-      # Start servers (NOHUP) + hard checks (no hanging)
+      # Start backend server (with env)
       # ------------------------
       - name: Start backend
         working-directory: backend
         run: |
-          nohup node src/index.js > backend.log 2>&1 &
-          echo "Backend started"
+          DOTENV_CONFIG_PATH=./.env.test node -r dotenv/config src/index.js > backend.log 2>&1 &
+          sleep 3
+          echo "---- BACKEND LOG ----"
+          tail -n 200 backend.log || true
 
+      # ------------------------
+      # Start frontend server
+      # ------------------------
       - name: Start frontend
         working-directory: frontend
         run: |
-          nohup npm run dev -- --port 3000 --hostname 0.0.0.0 > frontend.log 2>&1 &
-          echo "Frontend started"
-
-      - name: Wait & verify servers
-        run: |
-          set -e
-          echo "Waiting for backend..."
-          for i in {1..40}; do
-            if curl -fsS http://localhost:4000/health > /dev/null; then
-              echo "Backend OK"
-              break
-            fi
-            sleep 1
-          done
-
-          echo "Waiting for frontend..."
-          for i in {1..40}; do
-            if curl -fsS http://localhost:3000/login > /dev/null; then
-              echo "Frontend OK"
-              break
-            fi
-            sleep 1
-          done
-
-          # final assert (fail fast with logs)
-          curl -fsS http://localhost:4000/health > /dev/null || (echo "Backend not reachable" && exit 1)
-          curl -fsS http://localhost:3000/login > /dev/null || (echo "Frontend not reachable" && exit 1)
+          npm run dev -- --port 3000 --hostname 0.0.0.0 > frontend.log 2>&1 &
+          sleep 5
+          echo "---- FRONTEND LOG ----"
+          tail -n 200 frontend.log || true
 
       # ------------------------
-      # Cypress
+      # Verify servers (fail fast)
+      # ------------------------
+      - name: Verify servers
+        run: |
+          curl -fsS http://localhost:4000/health || (echo "Backend not reachable" && exit 1)
+          curl -fsS http://localhost:3000/login || (echo "Frontend not reachable" && exit 1)
+
+      # ------------------------
+      # Cypress E2E
       # ------------------------
       - name: Run Cypress (headless)
         working-directory: frontend
         run: npx cypress run
 
+      # ------------------------
+      # Logs on failure
+      # ------------------------
       - name: Print logs on failure
         if: failure()
         run: |
           echo "---- BACKEND LOG ----"
-          tail -n 200 backend/backend.log || true
+          tail -n 300 backend/backend.log || true
           echo "---- FRONTEND LOG ----"
-          tail -n 200 frontend/frontend.log || true
+          tail -n 300 frontend/frontend.log || true
           echo "---- MONGO LOG ----"
-          docker logs mongo --tail 200 || true
+          docker logs mongo --tail 300 || true
