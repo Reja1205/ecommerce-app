@@ -23,7 +23,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Node (no root cache because lockfile is in subfolders)
+      # Node (no root cache because lockfiles live in subfolders)
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -50,6 +50,9 @@ jobs:
           cat > .env.test << 'EOF'
           MONGO_URI=mongodb://127.0.0.1:27017/ecom_test
           JWT_SECRET=testsecret
+          SHIPPING_FEE_USD=5
+          PAYMENT_PROVIDER=mock
+          FRONTEND_ORIGIN=http://localhost:3000
           EOF
 
       - name: Run backend tests (Jest + Supertest)
@@ -99,3 +102,12 @@ jobs:
       - name: Run Cypress (headless)
         working-directory: frontend
         run: npx cypress run
+
+      # If anything fails, print logs (super helpful)
+      - name: Print logs on failure
+        if: failure()
+        run: |
+          echo "---- BACKEND LOG ----"
+          tail -n 200 backend/backend.log || true
+          echo "---- FRONTEND LOG ----"
+          tail -n 200 frontend/frontend.log || true
