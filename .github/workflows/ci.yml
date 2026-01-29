@@ -33,10 +33,6 @@ jobs:
             sleep 1
           done
           docker exec mongo mongosh --eval "rs.initiate({_id:'rs0',members:[{_id:0,host:'127.0.0.1:27017'}]})" || true
-          for i in {1..30}; do
-            docker exec mongo mongosh --quiet --eval "rs.isMaster().ismaster" | grep true && break
-            sleep 1
-          done
 
       # ------------------------
       # Backend: install + tests
@@ -61,7 +57,7 @@ jobs:
         run: npm test
 
       # ------------------------
-      # Frontend: install + Cypress
+      # Frontend: install
       # ------------------------
       - name: Install frontend deps
         working-directory: frontend
@@ -74,9 +70,9 @@ jobs:
           NEXT_PUBLIC_API_URL=http://localhost:4000
           EOF
 
-      - name: Install wait-on
-        run: npm install -g wait-on
-
+      # ------------------------
+      # Start servers (NOHUP) + hard checks (no hanging)
+      # ------------------------
       - name: Start backend
         working-directory: backend
         run: |
@@ -86,12 +82,37 @@ jobs:
       - name: Start frontend
         working-directory: frontend
         run: |
-          nohup npm run dev -- --port 3000 > frontend.log 2>&1 &
+          nohup npm run dev -- --port 3000 --hostname 0.0.0.0 > frontend.log 2>&1 &
           echo "Frontend started"
 
-      - name: Wait for servers
-        run: wait-on http://localhost:4000/health http://localhost:3000/login
+      - name: Wait & verify servers
+        run: |
+          set -e
+          echo "Waiting for backend..."
+          for i in {1..40}; do
+            if curl -fsS http://localhost:4000/health > /dev/null; then
+              echo "Backend OK"
+              break
+            fi
+            sleep 1
+          done
 
+          echo "Waiting for frontend..."
+          for i in {1..40}; do
+            if curl -fsS http://localhost:3000/login > /dev/null; then
+              echo "Frontend OK"
+              break
+            fi
+            sleep 1
+          done
+
+          # final assert (fail fast with logs)
+          curl -fsS http://localhost:4000/health > /dev/null || (echo "Backend not reachable" && exit 1)
+          curl -fsS http://localhost:3000/login > /dev/null || (echo "Frontend not reachable" && exit 1)
+
+      # ------------------------
+      # Cypress
+      # ------------------------
       - name: Run Cypress (headless)
         working-directory: frontend
         run: npx cypress run
