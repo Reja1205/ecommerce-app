@@ -6,7 +6,6 @@ const uniqueEmail = () => `test_${Date.now()}@example.com`;
 
 describe("Checkout reduces stock", () => {
   it("reduces stock after checkout", async () => {
-    // 1) register + login user
     const email = uniqueEmail();
     const password = "Password123";
 
@@ -16,7 +15,6 @@ describe("Checkout reduces stock", () => {
     const cookie = loginRes.headers["set-cookie"];
     expect(cookie).toBeDefined();
 
-    // 2) create a product directly in DB
     const p = await Product.create({
       title: "Test Cable",
       slug: `test-cable-${Date.now()}`,
@@ -30,7 +28,6 @@ describe("Checkout reduces stock", () => {
     const productId = String(p._id);
     const initialStock = p.stockQty;
 
-    // 3) add to cart qty 2
     const addRes = await request(app)
       .post("/api/cart/items")
       .set("Cookie", cookie)
@@ -38,15 +35,23 @@ describe("Checkout reduces stock", () => {
 
     expect(addRes.statusCode).toBe(200);
 
-    // 4) checkout
     const checkoutRes = await request(app)
       .post("/api/checkout")
       .set("Cookie", cookie);
 
-   expect([200, 201]).toContain(checkoutRes.statusCode);
+    // 🔥 CI debug: print body if not ok
+    if (![200, 201].includes(checkoutRes.statusCode)) {
+      // This will show in GitHub Actions logs
+      // and usually includes error message from your global error handler
+      // e.g. { message: 'Server error', error: '...' }
+      // or any custom error shape
+      // eslint-disable-next-line no-console
+      console.log("CHECKOUT_FAILED:", checkoutRes.statusCode, checkoutRes.body);
+      throw new Error(
+        `Checkout failed with ${checkoutRes.statusCode}: ${JSON.stringify(checkoutRes.body)}`
+      );
+    }
 
-
-    // 5) verify stock reduced in DB
     const updated = await Product.findById(productId);
     expect(updated).toBeTruthy();
     expect(updated.stockQty).toBe(initialStock - 2);
