@@ -41,17 +41,9 @@ jobs:
       # ------------------------
       # Backend: install + tests
       # ------------------------
-      - name: Cache backend npm
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-backend-${{ hashFiles('backend/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-backend-
-
       - name: Install backend deps
         working-directory: backend
-        run: npm ci
+        run: npm install
 
       - name: Create backend test env file
         working-directory: backend
@@ -71,17 +63,9 @@ jobs:
       # ------------------------
       # Frontend: install + Cypress
       # ------------------------
-      - name: Cache frontend npm
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-frontend-${{ hashFiles('frontend/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-frontend-
-
       - name: Install frontend deps
         working-directory: frontend
-        run: npm ci
+        run: npm install
 
       - name: Create frontend env file
         working-directory: frontend
