@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd="mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # ------------------------
+      # Backend: install + tests
+      # ------------------------
+      - name: Install backend deps
+        working-directory: backend
+        run: npm ci
+
+      - name: Create backend test env file
+        working-directory: backend
+        run: |
+          cat > .env.test << 'EOF'
+          MONGO_URI=mongodb://127.0.0.1:27017/ecom_test
+          JWT_SECRET=testsecret
+          EOF
+
+      - name: Run backend tests (Jest + Supertest)
+        working-directory: backend
+        run: npm test
+
+      # ------------------------
+      # Frontend: install + Cypress
+      # ------------------------
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Create frontend env file
+        working-directory: frontend
+        run: |
+          cat > .env.local << 'EOF'
+          NEXT_PUBLIC_API_URL=http://localhost:4000
+          EOF
+
+      # Start backend and frontend in background, then run Cypress
+      - name: Start backend
+        working-directory: backend
+        run: |
+          nohup node src/index.js > backend.log 2>&1 &
+          echo "Backend started"
+
+      - name: Start frontend
+        working-directory: frontend
+        run: |
+          nohup npm run dev -- --port 3000 > frontend.log 2>&1 &
+          echo "Frontend started"
+
+      - name: Wait for servers
+        run: npx wait-on http://localhost:4000/health http://localhost:3000/login
+
+      - name: Run Cypress (headless)
+        working-directory: frontend
+        run: npx cypress run
