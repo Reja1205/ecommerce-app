@@ -23,15 +23,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Node (no root cache because lockfile is in subfolders)
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
 
       # ------------------------
       # Backend: install + tests
       # ------------------------
+      - name: Cache backend npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-backend-${{ hashFiles('backend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-backend-
+
       - name: Install backend deps
         working-directory: backend
         run: npm ci
@@ -51,6 +59,14 @@ jobs:
       # ------------------------
       # Frontend: install + Cypress
       # ------------------------
+      - name: Cache frontend npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-frontend-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-frontend-
+
       - name: Install frontend deps
         working-directory: frontend
         run: npm ci
@@ -62,7 +78,9 @@ jobs:
           NEXT_PUBLIC_API_URL=http://localhost:4000
           EOF
 
-      # Start backend and frontend in background, then run Cypress
+      - name: Install wait-on
+        run: npm install -g wait-on
+
       - name: Start backend
         working-directory: backend
         run: |
@@ -76,7 +94,7 @@ jobs:
           echo "Frontend started"
 
       - name: Wait for servers
-        run: npx wait-on http://localhost:4000/health http://localhost:3000/login
+        run: wait-on http://localhost:4000/health http://localhost:3000/login
 
       - name: Run Cypress (headless)
         working-directory: frontend
