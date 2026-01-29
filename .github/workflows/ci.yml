@@ -14,20 +14,31 @@ jobs:
         ports:
           - 27017:27017
         options: >-
+          --name mongo
           --health-cmd="mongosh --eval 'db.runCommand({ ping: 1 })'"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
+          --replSet rs0
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Node (no root cache because lockfiles live in subfolders)
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 24
+
+      # ---- Init Mongo replica set (IMPORTANT) ----
+      - name: Init Mongo replica set
+        run: |
+          mongosh --eval "rs.initiate({_id:'rs0', members:[{_id:0, host:'127.0.0.1:27017'}]})" || true
+          # wait until primary
+          for i in {1..30}; do
+            mongosh --quiet --eval "rs.isMaster().ismaster" | grep true && break
+            sleep 1
+          done
 
       # ------------------------
       # Backend: install + tests
@@ -48,7 +59,7 @@ jobs:
         working-directory: backend
         run: |
           cat > .env.test << 'EOF'
-          MONGO_URI=mongodb://127.0.0.1:27017/ecom_test
+          MONGO_URI=mongodb://127.0.0.1:27017/ecom_test?replicaSet=rs0
           JWT_SECRET=testsecret
           SHIPPING_FEE_USD=5
           PAYMENT_PROVIDER=mock
@@ -103,7 +114,6 @@ jobs:
         working-directory: frontend
         run: npx cypress run
 
-      # If anything fails, print logs (super helpful)
       - name: Print logs on failure
         if: failure()
         run: |
