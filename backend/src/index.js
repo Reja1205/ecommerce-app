@@ -3,10 +3,12 @@ require("dotenv").config();
 const app = require("./app");
 const connectDB = require("./config/db");
 
-const PORT = 4000;
+const PORT = process.env.PORT || 4000;
 
+// connect database first
 connectDB();
 
-app.listen(PORT, '0.0.0.0', () => {
+// listen on all interfaces (REQUIRED for Render/Docker)
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://0.0.0.0:${PORT}`);
 });
